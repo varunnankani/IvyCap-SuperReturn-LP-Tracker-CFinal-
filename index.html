@@ -77,7 +77,7 @@ td{padding:7px 8px;vertical-align:middle;color:#1a1a1a;font-size:12px}
 .msg-box{width:100%;border:1px solid #D6E4F0;border-radius:5px;background:#fff;color:#1a1a1a;font-size:11px;padding:8px 36px 8px 8px;font-family:inherit;line-height:1.55;resize:vertical;min-height:130px}
 .msg-box:focus{outline:none;border-color:#2E75B6}
 .subj-box{width:100%;border:1px solid #D6E4F0;border-radius:5px;background:#F7F8FA;color:#6B6B6B;font-size:10px;padding:5px 8px;font-family:inherit;margin-bottom:5px;font-style:italic}
-.msg-content{display:none}.msg-content.active-msg{display:block}
+.msg-content{display:none}.msg-content.active-msg{display:block}.msg-area{transition:opacity .16s ease;opacity:1}
 .copy-btn{position:absolute;top:7px;right:7px;background:#fff;border:1px solid #D6E4F0;border-radius:4px;cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;transition:all .15s;opacity:0.65;width:24px;height:24px}
 .copy-btn:hover{opacity:1;border-color:#2E75B6;background:#EBF3FA}
 .copy-btn.copied{border-color:#1A6B3C;background:#E2EFDA;opacity:1}
@@ -272,20 +272,26 @@ function upd(id,field,val){state[id][field]=val;updateMetrics();}
 
 function escHtml(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function escAttr(v){return escHtml(v).replace(/"/g,"&quot;");}
-function msgSubject(c,tab){return tab==="email"?(c.email_subj||""):"";}
+function normalizeMsg(v){
+  return String(v||"")
+    .replace(/\\r\\n/g,"\n")
+    .replace(/\\n/g,"\n")
+    .replace(/\\t/g,"\t");
+}
+function msgSubject(c,tab){return tab==="email"?normalizeMsg(c.email_subj):"";}
 function msgText(c,tab){
-  if(tab==="linkedin")return c.li_msg||"";
-  if(tab==="email")return c.email_body||"";
-  if(tab==="inapp")return c.inapp_msg||"";
+  if(tab==="linkedin")return normalizeMsg(c.li_msg);
+  if(tab==="email")return normalizeMsg(c.email_body);
+  if(tab==="inapp")return normalizeMsg(c.inapp_msg);
   return "";
 }
 function activeMessageHtml(c,tab){
   var subj=msgSubject(c,tab);
-  var txt=msgText(c,tab).replace(/\n/g,"\n");
-  var subjHtml=subj?'<input class="subj-box" type="text" readonly value="'+escAttr(subj)+'">':'';
+  var txt=msgText(c,tab);
+  var subjHtml=subj?'<input class="subj-box" id="subj-active-'+c.id+'" type="text" readonly value="'+escAttr(subj)+'" onclick="event.stopPropagation()">':'';
   return subjHtml
     +'<div class="msg-wrap">'
-    +'<textarea class="msg-box" id="ta-active-'+c.id+'" data-tab="'+tab+'" data-cid="'+c.id+'">'+escHtml(txt)+'</textarea>'
+    +'<textarea class="msg-box" id="ta-active-'+c.id+'" data-tab="'+tab+'" data-cid="'+c.id+'" onclick="event.stopPropagation()">'+escHtml(txt)+'</textarea>'
     +'<button class="copy-btn" id="cb-active-'+c.id+'" data-tab="'+tab+'" data-cid="'+c.id+'" onclick="event.stopPropagation();copyMsgBtn(this)">'+COPY_SVG+'</button>'
     +'</div>';
 }
@@ -301,33 +307,14 @@ function switchTab(id,tab){
   var c=null;
   for(var j=0;j<CONTACTS.length;j++){if(CONTACTS[j].id===id){c=CONTACTS[j];break;}}
   var area=document.getElementById("msg-area-"+id);
-  if(c&&area)area.innerHTML=activeMessageHtml(c,tab);
+  if(c&&area){
+    area.style.opacity="0";
+    setTimeout(function(){
+      area.innerHTML=activeMessageHtml(c,tab);
+      area.style.opacity="1";
+    },120);
+  }
 }
-function switchTabBtn(el){
-  var id=+el.getAttribute("data-id");
-  var tab=el.getAttribute("data-tab");
-  switchTab(id,tab);
-}
-
-function copyMsg(id,tab){
-  var ta=document.getElementById("ta-"+tab+"-"+id);
-  if(!ta)return;
-  var btn=document.getElementById("cb-"+tab+"-"+id);
-  navigator.clipboard.writeText(ta.value).then(function(){
-    if(btn){btn.innerHTML=CHECK_SVG;btn.classList.add("copied");setTimeout(function(){btn.innerHTML=COPY_SVG;btn.classList.remove("copied");},2000);}
-  });
-}
-function copyMsgBtn(btn){
-  var id=btn.getAttribute("data-id");
-  var tab=btn.getAttribute("data-tab");
-  var ta=document.getElementById("ta-"+tab+"-"+id);
-  if(!ta)return;
-  navigator.clipboard.writeText(ta.value).then(function(){
-    btn.innerHTML=CHECK_SVG;btn.classList.add("copied");
-    setTimeout(function(){btn.innerHTML=COPY_SVG;btn.classList.remove("copied");},2000);
-  });
-}
-
 function switchTabBtn(el){
   var id=+el.getAttribute("data-cid");
   var tab=el.getAttribute("data-tab");
@@ -335,9 +322,12 @@ function switchTabBtn(el){
 }
 function copyMsgBtn(btn){
   var id=btn.getAttribute("data-cid");
+  var tab=btn.getAttribute("data-tab")||"";
   var ta=document.getElementById("ta-active-"+id);
+  var subj=document.getElementById("subj-active-"+id);
   if(!ta)return;
-  navigator.clipboard.writeText(ta.value).then(function(){
+  var copyText=(subj&&subj.value?subj.value+"\n\n":"")+ta.value;
+  navigator.clipboard.writeText(copyText).then(function(){
     btn.innerHTML=CHECK_SVG;btn.classList.add("copied");
     setTimeout(function(){btn.innerHTML=COPY_SVG;btn.classList.remove("copied");},2000);
   });
@@ -389,11 +379,11 @@ function buildExpanded(c){
   if(activeTab==="inapp"&&!hasInapp)activeTab=hasLI?"linkedin":(hasEmail?"email":"inapp");
   s.activeTab=activeTab;
   var liHref=c.linkedin||"https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(c.name);
-  var emHref=c.email?"mailto:"+c.email:"";
+  var emHref=(c.email&&c.email!=="not publicly available")?"mailto:"+c.email:"";
 
   var contactLinks='<div class="contact-links">'
-    +'<a href="'+liHref+'" target="_blank" class="li-link">'+LI_SVG+' LinkedIn Profile</a>'
-    +(emHref?'<a href="'+emHref+'" class="em-link">'+EMAIL_SVG+' Send email</a>':'')
+    +'<a href="'+liHref+'" target="_blank" class="li-link" onclick="event.stopPropagation()">'+LI_SVG+' LinkedIn Profile</a>'
+    +(emHref?'<a href="'+emHref+'" class="em-link" onclick="event.stopPropagation()">'+EMAIL_SVG+' Send email</a>':'')
     +'</div>';
 
   var tabs='<div class="outreach-tabs" id="op-'+c.id+'">';
@@ -402,25 +392,8 @@ function buildExpanded(c){
   if(hasInapp)tabs+='<div class="outreach-tab'+(activeTab==="inapp"?" active":"")+'" data-tab="inapp" data-cid="'+c.id+'" onclick="event.stopPropagation();switchTabBtn(this)">In-app</div>';
   tabs+='</div>';
 
-  function msgBlock(tab,subj,msgText){
-    var active=activeTab===tab;
-    var displayText=msgText.replace(/\\n/g,"\n");
-    var subjHtml=subj?'<input class="subj-box" type="text" readonly value="'+subj.replace(/"/g,"&quot;")+'">':'';
-    var mcId="mc-"+tab+"-"+c.id;
-    var taId="ta-"+tab+"-"+c.id;
-    var btnId="cb-"+tab+"-"+c.id;
-    return '<div class="msg-content'+(active?' active-msg':'')+'" id="'+mcId+'">'
-      +subjHtml
-      +'<div class="msg-wrap">'
-      +'<textarea class="msg-box" id="'+taId+'" data-tab="'+tab+'" data-cid="'+c.id+'">'+displayText+'</textarea>'
-      +'<button class="copy-btn" id="'+btnId+'" data-tab="'+tab+'" data-cid="'+c.id+'" onclick="copyMsgBtn(this)">'+COPY_SVG+'</button>'
-      +'</div></div>';
-  }
-
-  var msgs="";
-  if(hasLI)msgs+=msgBlock("linkedin","",c.li_msg);
-  if(hasEmail)msgs+=msgBlock("email",c.email_subj,c.email_body);
-  if(hasInapp)msgs+=msgBlock("inapp","",c.inapp_msg);
+  // One fixed outreach area. The selected tab rewrites this area's actual subject/body content.
+  var msgArea='<div class="msg-area" id="msg-area-'+c.id+'">'+activeMessageHtml(c,activeTab)+'</div>';
 
   var dueCls=isOverdue(s.dueDate)?"overdue":"";
 
@@ -429,21 +402,21 @@ function buildExpanded(c){
   function ownOpts(){var o="";for(var i=0;i<OWNERS.length;i++)o+='<option'+(s.owner===OWNERS[i]?" selected":"")+'>'+OWNERS[i]+'</option>';return o;}
 
   var crmHtml='<div class="crm-grid">'
-    +'<div class="crm-field"><label>Stage</label><select class="sel" onchange="upd("+c.id+",&quot;stage&quot;,this.value)">'+stageOpts()+'</select></div>'
-    +'<div class="crm-field"><label>Interest</label><select class="sel" onchange="upd("+c.id+",&quot;interest&quot;,this.value)">'+intOpts()+'</select></div>'
-    +'<div class="crm-field"><label>Owner</label><select class="sel" onchange="upd("+c.id+",&quot;owner&quot;,this.value)">'+ownOpts()+'</select></div>'
-    +'<div class="crm-field"><label>Last touch</label><input class="inp" type="date" value="'+(s.lastTouch||"")+'" onchange="upd("+c.id+",&quot;lastTouch&quot;,this.value)"></div>'
+    +'<div class="crm-field"><label>Stage</label><select class="sel" onclick="event.stopPropagation()" onchange="upd('+c.id+',&quot;stage&quot;,this.value)">'+stageOpts()+'</select></div>'
+    +'<div class="crm-field"><label>Interest</label><select class="sel" onclick="event.stopPropagation()" onchange="upd('+c.id+',&quot;interest&quot;,this.value)">'+intOpts()+'</select></div>'
+    +'<div class="crm-field"><label>Owner</label><select class="sel" onclick="event.stopPropagation()" onchange="upd('+c.id+',&quot;owner&quot;,this.value)">'+ownOpts()+'</select></div>'
+    +'<div class="crm-field"><label>Last touch</label><input class="inp" onclick="event.stopPropagation()" type="date" value="'+(s.lastTouch||"")+'" onchange="upd('+c.id+',&quot;lastTouch&quot;,this.value)"></div>'
     +'</div>'
     +'<div class="crm-field" style="margin-bottom:8px"><label>Notes</label>'
-    +'<textarea class="ta" rows="3" onchange="upd("+c.id+",&quot;notes&quot;,this.value)" placeholder="Meeting notes, interest signals...">'+(s.notes||"")+'</textarea></div>'
+    +'<textarea class="ta" rows="3" onclick="event.stopPropagation()" onchange="upd('+c.id+',&quot;notes&quot;,this.value)" placeholder="Meeting notes, interest signals...">'+(s.notes||"")+'</textarea></div>'
     +'<div class="crm-grid">'
-    +'<div class="crm-field"><label>Next action</label><input class="inp" type="text" value="'+(s.nextAction||"")+'" onchange="upd("+c.id+",&quot;nextAction&quot;,this.value)" placeholder="e.g. Send deck"></div>'
-    +'<div class="crm-field"><label>Due date</label><input class="inp '+dueCls+'" type="date" value="'+(s.dueDate||"")+'" onchange="upd("+c.id+",&quot;dueDate&quot;,this.value)"></div>'
+    +'<div class="crm-field"><label>Next action</label><input class="inp" onclick="event.stopPropagation()" type="text" value="'+(s.nextAction||"")+'" onchange="upd('+c.id+',&quot;nextAction&quot;,this.value)" placeholder="e.g. Send deck"></div>'
+    +'<div class="crm-field"><label>Due date</label><input class="inp '+dueCls+'" onclick="event.stopPropagation()" type="date" value="'+(s.dueDate||"")+'" onchange="upd('+c.id+',&quot;dueDate&quot;,this.value)"></div>'
     +'</div>'
     +'<div style="margin-top:10px;padding-top:8px;border-top:1px solid #D6E4F0">'
     +'<div class="exp-col-title">IvyCap relevance</div>'
     +'<p class="exp-muted" style="margin-top:4px">'+c.rationale+'</p></div>'
-    +'<div style="margin-top:8px"><button class="btn-sm btn-red" onclick="doDeprioritize('+c.id+')">Click to Deprioritize</button></div>';
+    +'<div style="margin-top:8px"><button class="btn-sm btn-red" onclick="event.stopPropagation();doDeprioritize('+c.id+')">Click to Deprioritize</button></div>';
 
   var sessionHtml="";
   if(c.sessionDay&&c.sessionDay!=="Not confirmed as speaker"){
@@ -458,7 +431,7 @@ function buildExpanded(c){
     +sessionHtml+'</div>'
     +'<div class="exp-col">'
     +'<div class="exp-col-title">Suggested outreach</div>'
-    +contactLinks+tabs+msgs+'</div>'
+    +contactLinks+tabs+msgArea+'</div>'
     +'<div class="exp-col">'+crmHtml+'</div>'
     +'</div>';
 }
