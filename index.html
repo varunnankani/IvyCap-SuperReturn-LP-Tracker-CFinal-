@@ -260,7 +260,7 @@ function srt(arr){
 function isPri(c){return (c.score>=3&&!deprioritizedManual[c.id])||!!reprioritized[c.id];}
 function isDepr(c){return !isPri(c);}
 
-function evB(ev){var label=ev==="SG"?"🇸🇬 SG":"🇳🇱 AMS";return '<span class="badge ev-'+ev.toLowerCase()+'">'+label+'</span>';}
+function evB(ev){var label=ev==="SG"?"SG":"AMS";return '<span class="badge ev-'+ev.toLowerCase()+'">'+label+'</span>';}
 function starsHTML(sc){var s="";for(var i=0;i<5;i++)s+=(i<sc?"&#9733;":"&#9734;");return '<span class="stars">'+s+'</span>';}
 function typeB(tp){
   var m={LP:"lp",GP:"gp",DFI:"dfi",Advisor:"adv",Gov:"oth",Other:"oth"};
@@ -270,18 +270,38 @@ function isOverdue(d){return d&&new Date(d)<new Date();}
 
 function upd(id,field,val){state[id][field]=val;updateMetrics();}
 
+function escHtml(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function escAttr(v){return escHtml(v).replace(/"/g,"&quot;");}
+function msgSubject(c,tab){return tab==="email"?(c.email_subj||""):"";}
+function msgText(c,tab){
+  if(tab==="linkedin")return c.li_msg||"";
+  if(tab==="email")return c.email_body||"";
+  if(tab==="inapp")return c.inapp_msg||"";
+  return "";
+}
+function activeMessageHtml(c,tab){
+  var subj=msgSubject(c,tab);
+  var txt=msgText(c,tab).replace(/\n/g,"\n");
+  var subjHtml=subj?'<input class="subj-box" type="text" readonly value="'+escAttr(subj)+'">':'';
+  return subjHtml
+    +'<div class="msg-wrap">'
+    +'<textarea class="msg-box" id="ta-active-'+c.id+'" data-tab="'+tab+'" data-cid="'+c.id+'">'+escHtml(txt)+'</textarea>'
+    +'<button class="copy-btn" id="cb-active-'+c.id+'" data-tab="'+tab+'" data-cid="'+c.id+'" onclick="event.stopPropagation();copyMsgBtn(this)">'+COPY_SVG+'</button>'
+    +'</div>';
+}
 function switchTab(id,tab){
   state[id].activeTab=tab;
   var panel=document.getElementById("op-"+id);
-  if(!panel)return;
-  var ots=panel.querySelectorAll(".outreach-tab");
-  for(var i=0;i<ots.length;i++)ots[i].classList.remove("active");
-  var at=panel.querySelector('[data-tab="'+tab+'"]');
-  if(at)at.classList.add("active");
-  var mcs=panel.querySelectorAll(".msg-content");
-  for(var i=0;i<mcs.length;i++)mcs[i].classList.remove("active-msg");
-  var el=document.getElementById("mc-"+tab+"-"+id);
-  if(el)el.classList.add("active-msg");
+  if(panel){
+    var ots=panel.querySelectorAll(".outreach-tab");
+    for(var i=0;i<ots.length;i++)ots[i].classList.remove("active");
+    var at=panel.querySelector('[data-tab="'+tab+'"]');
+    if(at)at.classList.add("active");
+  }
+  var c=null;
+  for(var j=0;j<CONTACTS.length;j++){if(CONTACTS[j].id===id){c=CONTACTS[j];break;}}
+  var area=document.getElementById("msg-area-"+id);
+  if(c&&area)area.innerHTML=activeMessageHtml(c,tab);
 }
 function switchTabBtn(el){
   var id=+el.getAttribute("data-id");
@@ -314,9 +334,8 @@ function switchTabBtn(el){
   switchTab(id,tab);
 }
 function copyMsgBtn(btn){
-  var tab=btn.getAttribute("data-tab");
   var id=btn.getAttribute("data-cid");
-  var ta=document.getElementById("ta-"+tab+"-"+id);
+  var ta=document.getElementById("ta-active-"+id);
   if(!ta)return;
   navigator.clipboard.writeText(ta.value).then(function(){
     btn.innerHTML=CHECK_SVG;btn.classList.add("copied");
@@ -523,7 +542,7 @@ function renderPrioritized(){
     if(c.event!==lastEv){
       var div=document.createElement("tr");
       div.className="sec-div";
-      div.innerHTML='<td colspan="10">'+(c.event==="SG"?"🇸🇬 Singapore":"🇳🇱 Amsterdam")+'</td>';
+      div.innerHTML='<td colspan="10">'+(c.event==="SG"?"Singapore":"Amsterdam")+'</td>';
       tbody.appendChild(div);
       lastEv=c.event;
     }
@@ -589,7 +608,7 @@ function renderAll(){
     var c=data[i];
     if(c.event!==lastEv){
       var div=document.createElement("tr");div.className="sec-div";
-      div.innerHTML='<td colspan="7">'+(c.event==="SG"?"🇸🇬 Singapore":"🇳🇱 Amsterdam")+'</td>';
+      div.innerHTML='<td colspan="7">'+(c.event==="SG"?"Singapore":"Amsterdam")+'</td>';
       tbody.appendChild(div);lastEv=c.event;
     }
     var isExp=!!expanded[c.id];
