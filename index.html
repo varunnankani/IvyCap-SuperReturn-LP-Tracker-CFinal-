@@ -62,6 +62,14 @@ td{padding:7px 8px;vertical-align:middle;color:#1a1a1a;font-size:12px}
 .exp-col-title{font-size:10px;font-weight:600;color:#6B6B6B;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
 .exp-text{font-size:12px;color:#1a1a1a;line-height:1.5;margin-bottom:8px}
 .exp-muted{font-size:11px;color:#6B6B6B;line-height:1.4;margin-bottom:8px}
+.relevance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:7px 0 10px}
+.relevance-card{border-radius:6px;padding:8px 9px;min-height:57px}
+.relevance-card-alignment{background:#E2F3E8;border:1px solid #A9D8B8}
+.relevance-card-influence{background:#E6F1FB;border:1px solid #B7D4ED}
+.relevance-card-fit{background:#FFF3CD;border:1px solid #E7D48A}
+.relevance-card-label{font-size:9px;font-weight:600;color:#6B6B6B;text-transform:uppercase;letter-spacing:.035em;line-height:1.25;margin-bottom:5px}
+.relevance-card-value{font-size:11px;font-weight:600;color:#0D1E3D;line-height:1.35}
+.relevance-card-sub{font-size:9px;color:#6B6B6B;font-weight:400;margin-top:2px;line-height:1.3}
 .outreach-tabs{display:flex;margin-bottom:8px;border:1px solid #D6E4F0;border-radius:5px;overflow:hidden;width:fit-content}
 .outreach-tab{padding:4px 11px;font-size:11px;cursor:pointer;background:#fff;color:#6B6B6B;border-right:1px solid #D6E4F0;user-select:none}
 .outreach-tab:last-child{border-right:none}
@@ -268,6 +276,43 @@ function typeB(tp){
 }
 function isOverdue(d){return d&&new Date(d)<new Date();}
 
+function accessibilityLevel(c){
+  var raw=String(c.access||"").trim();
+  var m=raw.match(/\b(High|Medium|Low)\b/i);
+  return m?m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase():"Not stated";
+}
+function influenceLevel(c){
+  var t=String(c.title||"").toLowerCase();
+  if(/founder|chief investment officer|\bcio\b|\bceo\b|global head|managing partner|managing director|head of|partner/.test(t))return "High";
+  if(/principal|director|vice president|\bvp\b|portfolio manager/.test(t))return "Medium";
+  return c.score>=4?"High":(c.score>=3?"Medium":"Low");
+}
+function alignmentLabel(c){
+  var txt=(String(c.rationale||"")+" "+String(c.company_desc||"")+" "+String(c.bg||"")+" "+String(c.additional||"")).toLowerCase();
+  var tags=[];
+  if(/venture|\bvc\b|technology|\btech\b|digital|innovation/.test(txt))tags.push("Tech / VC");
+  if(/growth|growth equity|scale[- ]?up/.test(txt))tags.push("Growth");
+  if(/emerging market|\bem\b|india|asia|southeast asia|apac/.test(txt))tags.push("Emerging Markets");
+  if(/co-invest|coinvest|secondar/.test(txt))tags.push("Co-investments");
+  var seen={};
+  tags=tags.filter(function(x){if(seen[x])return false;seen[x]=true;return true;});
+  if(!tags.length)tags.push("Broad Private Markets");
+  return tags.slice(0,3).join(" · ");
+}
+function strategicFitLabel(c){
+  if(c.score>=4)return "High";
+  if(c.score===3)return "Medium";
+  return "Low";
+}
+function relevanceSummaryHtml(c){
+  var influence=influenceLevel(c);
+  return '<div class="relevance-summary">'
+    +'<div class="relevance-card relevance-card-alignment"><div class="relevance-card-label">Investment alignment</div><div class="relevance-card-value">'+escHtml(alignmentLabel(c))+'</div></div>'
+    +'<div class="relevance-card relevance-card-influence"><div class="relevance-card-label">Influence</div><div class="relevance-card-value">'+escHtml(influence)+' influence</div></div>'
+    +'<div class="relevance-card relevance-card-fit"><div class="relevance-card-label">Overall strategic fit</div><div class="relevance-card-value">'+escHtml(strategicFitLabel(c))+'</div></div>'
+    +'</div>';
+}
+
 function upd(id,field,val){state[id][field]=val;updateMetrics();}
 
 function escHtml(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
@@ -460,6 +505,7 @@ function buildExpanded(c){
     +'</div>'
     +'<div style="margin-top:10px;padding-top:8px;border-top:1px solid #D6E4F0">'
     +'<div class="exp-col-title">IvyCap relevance</div>'
+    +relevanceSummaryHtml(c)
     +'<p class="exp-muted" style="margin-top:4px">'+c.rationale+'</p></div>'
     +'<div style="margin-top:8px"><button class="btn-sm btn-red" onclick="event.stopPropagation();doDeprioritize('+c.id+')">Click to Deprioritize</button></div>';
 
@@ -496,10 +542,14 @@ function updateMetrics(){
   var mhtml="";for(var i=0;i<mdata.length;i++)mhtml+='<div class="metric"><div class="metric-lbl">'+mdata[i][0]+'</div><div class="metric-val">'+mdata[i][1]+'</div></div>';
   document.getElementById("metrics").innerHTML=mhtml;
 
+  // The headline metrics above remain cumulative across both events.
+  // The white pipeline row below follows the event selected in the event filter.
+  var selectedEvent=document.getElementById("f-event").value;
+  var pipelineContacts=selectedEvent?pr.filter(function(c){return c.event===selectedEvent;}):pr;
   var pstages=["Not contacted","LinkedIn","Connected","Email/App","Replied","Confirmed","Met","Pipeline"];
   var counts={};for(var i=0;i<pstages.length;i++)counts[pstages[i]]=0;
-  for(var i=0;i<pr.length;i++){
-    var st=state[pr[i].id].stage;
+  for(var i=0;i<pipelineContacts.length;i++){
+    var st=state[pipelineContacts[i].id].stage;
     if(st==="LinkedIn sent")counts["LinkedIn"]++;
     else if(st==="Email sent"||st==="In-app sent")counts["Email/App"]++;
     else if(st==="Meeting confirmed")counts["Confirmed"]++;
@@ -507,7 +557,7 @@ function updateMetrics(){
     else if(counts[st]!==undefined)counts[st]++;
     else counts["Not contacted"]++;
   }
-  var total=pr.length||1;
+  var total=pipelineContacts.length||1;
   var phtml="";
   for(var i=0;i<pstages.length;i++){
     var s=pstages[i];
